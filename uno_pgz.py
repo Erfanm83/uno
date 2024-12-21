@@ -2,7 +2,11 @@ from random import shuffle, choice, randint
 from itertools import product, repeat, chain
 from threading import Thread
 from time import sleep
-
+# from pgzero.actor import Actor
+# import pygame
+# import os
+# pygame.init()
+# pygame.display.set_mode((1200, 800))  # Initialize a display
 
 COLORS = ['red', 'yellow', 'green', 'blue']
 ALL_COLORS = COLORS + ['black']
