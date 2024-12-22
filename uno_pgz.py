@@ -4,9 +4,6 @@ from threading import Thread
 from time import sleep
 # from pgzero.actor import Actor
 # import pygame
-# import os
-# pygame.init()
-# pygame.display.set_mode((1200, 800))  # Initialize a display
 
 COLORS = ['red', 'yellow', 'green', 'blue']
 ALL_COLORS = COLORS + ['black']
@@ -505,3 +502,4 @@ def on_mouse_down(pos):
             if card.collidepoint(pos):
                 game_data.selected_color = color
                 game_data.color_selection_required = False
+
