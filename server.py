@@ -73,8 +73,15 @@ def start_server():
     """Start the chat server."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((HOST, PORT))
-    server.listen()
-    print(f"Server listening on {HOST}:{PORT}")
+    server.listen(4)
+    print(f"UNO Server is listening on {HOST}:{PORT}")
+
+    # Game state
+    deck = [f"{color}-{value}" for color in ["Red", "Yellow", "Green", "Blue"] for value in list(range(1, 10)) + ["Skip", "Reverse", "Draw Two"]] * 2
+    players = {}
+    current_turn = 0
+    discard_pile = []
+    game_started = False
 
     while True:
         client_socket, client_address = server.accept()
@@ -111,7 +118,7 @@ def start_server():
                 print("All players connected. Starting the game...")
                 threading.Thread(target=start_game).start()
 
-            threading.Thread(target=handle_client, args=(client_socket, user_id)).start()
+            # threading.Thread(target=handle_client, args=(client_socket, user_id)).start()
 
 if __name__ == "__main__":
     start_server()
