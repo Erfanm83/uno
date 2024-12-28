@@ -8,6 +8,9 @@ import threading
 import json
 import os
 
+from pgzero.actor import Actor
+from pgzero.screen import Screen
+
 COLORS = ['red', 'yellow', 'green', 'blue']
 ALL_COLORS = COLORS + ['black']
 NUMBERS = list(range(10)) + list(range(1, 10))
@@ -16,8 +19,27 @@ COLOR_CARD_TYPES = NUMBERS + SPECIAL_CARD_TYPES * 2
 BLACK_CARD_TYPES = ['wildcard', '+4']
 CARD_TYPES = NUMBERS + SPECIAL_CARD_TYPES + BLACK_CARD_TYPES
 
+# Server settings
+HOST = '127.0.0.1'  # localhost
+PORT = 12345        # Port for the server
+
+# List to keep track of connected clients
+clients = []
+
 WIDTH = 1200
 HEIGHT = 800
+
+# Maximum number of clients allowed
+MAX_CLIENTS = int(input("Enter the maximum number of clients: "))
+
+# File to store client details
+CLIENTS_FILE = "clients_data.json"
+
+# Global variables
+game_data = None
+num_players = MAX_CLIENTS
+# deck_img = Actor('back')
+# color_imgs = {color: Actor(color) for color in COLORS}
 
 class UnoCard:
     """
@@ -378,7 +400,6 @@ class GameData:
     def selected_color(self, value):
         self._selected_color = value
 
-
 # game_data = GameData()
 
 class AIUnoGame:
@@ -437,6 +458,7 @@ class AIUnoGame:
             ' '.join(str(card) for card in self.player.hand)
         ))
 
+# game = AIUnoGame(MAX_CLIENTS)
 
 def draw_deck():
     deck_img.pos = (130, 70)
@@ -490,19 +512,6 @@ def on_mouse_down(pos):
                 game_data.selected_color = color
                 game_data.color_selection_required = False
 
-
-# Server settings
-HOST = '127.0.0.1'  # localhost
-PORT = 12345        # Port for the server
-
-# List to keep track of connected clients
-clients = []
-# Maximum number of clients allowed
-MAX_CLIENTS = int(input("Enter the maximum number of clients: "))
-
-# File to store client details
-CLIENTS_FILE = "clients_data.json"
-
 # Load existing client data
 if os.path.exists(CLIENTS_FILE):
     with open(CLIENTS_FILE, 'r') as file:
@@ -510,10 +519,29 @@ if os.path.exists(CLIENTS_FILE):
 else:
     client_data = {} # declare as a dictionary
 
+
 def save_client_data():
-    """Save client data to a file."""
-    with open(CLIENTS_FILE, 'w') as file:
-        json.dump(client_data, file, indent=4)
+    """Save client data to the JSON file."""
+    try:
+        with open(CLIENTS_FILE, 'w') as file:
+            json.dump(client_data, file, indent=4)
+        print("Client data saved.")
+    except Exception as e:
+        print(f"Error saving client data: {e}")
+
+def update_client_data(username, user_id, played, wins, defeats):
+    """Update client data for a user and save it."""
+    if username in client_data:
+        client_data[username]['total_played'] += 1
+    else:
+        client_data[username] = {
+            'user_id': user_id,
+            'total_played': played,
+            'total_wins': wins,
+            'total_defeats': defeats
+        }
+    save_client_data()
+
 
 def broadcast(message, sender_socket=None):
     """Broadcast a message to all clients except the sender."""
@@ -525,8 +553,11 @@ def broadcast(message, sender_socket=None):
                 print(f"Error sending message: {e}")
                 clients.remove(client)
 
-def handle_client(client_socket, user_id):
-    """Handle a single client connection."""
+def handle_client(client_socket, username):
+    """
+    Handles communication with a single client.
+    """
+    user_id = client_data[username]['user_id']
     try:
         while True:
             message = client_socket.recv(1024)
@@ -540,17 +571,34 @@ def handle_client(client_socket, user_id):
         pass
     finally:
         # Update client data on exit
-        if user_id in client_data:
-            client_data[user_id]['total_played'] += 1
+        # if user_id in client_data:
+        #     print("gorgali")
+        #     # update_client_data(user_id, user_id)
+        #     # client_data[user_id]['total_played'] += 1
         print(f"Client {user_id} disconnected")
         clients.remove(client_socket)
         client_socket.close()
-        save_client_data()
+        # save_client_data()
 
 def start_game():
     """Start the Uno game when all clients are connected."""
+    # global game_data, num_players, game
+
     print("Starting Uno Game...")
     # os.system('pgzrun uno_pgz.py')
+    
+    # game = AIUnoGame(num_players)
+
+    # deck_img = Actor('back')
+    # color_imgs = {color: Actor(color) for color in COLORS}
+
+    # def game_loop():
+    #     while game.game.is_active:
+    #         sleep(1)
+    #         next(game)
+
+    # game_loop_thread = Thread(target=game_loop)
+    # game_loop_thread.start()
 
 def start_server():
     """Start the chat server."""
@@ -558,13 +606,6 @@ def start_server():
     server.bind((HOST, PORT))
     server.listen(MAX_CLIENTS)
     print(f"UNO Server is listening on {HOST}:{PORT}")
-
-    # Game state
-    deck = [f"{color}-{value}" for color in ["Red", "Yellow", "Green", "Blue"] for value in list(range(1, 10)) + ["Skip", "Reverse", "Draw Two"]] * 2
-    players = {}
-    current_turn = 0
-    discard_pile = []
-    game_started = False
 
     while True:
         client_socket, client_address = server.accept()
@@ -585,12 +626,7 @@ def start_server():
                 user_id = client_data[username]['user_id']
             else:
                 user_id = str(len(client_data) + 1)
-                client_data[username] = {
-                    'user_id': user_id,
-                    'total_played': 0,
-                    'total_wins': 0,
-                    'total_defeats': 0
-                }
+                update_client_data(username, user_id, 1, 0, 0)
 
             client_socket.send(f"Welcome {username}! Your User ID is {user_id}.\n".encode('utf-8'))
             clients.append(client_socket)
@@ -602,23 +638,6 @@ def start_server():
                 threading.Thread(target=start_game).start()
 
             # threading.Thread(target=handle_client, args=(client_socket, user_id)).start()
-
-
-game_data = GameData()
-num_players = MAX_CLIENTS
-
-game = AIUnoGame(num_players)
-
-deck_img = Actor('back')
-color_imgs = {color: Actor(color) for color in COLORS}
-
-def game_loop():
-    while game.game.is_active:
-        sleep(1)
-        next(game)
-
-game_loop_thread = Thread(target=game_loop)
-game_loop_thread.start()
 
 if __name__ == "__main__":
     start_server()
