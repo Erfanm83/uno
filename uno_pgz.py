@@ -1,6 +1,5 @@
 from random import shuffle, choice, randint
 from itertools import product, repeat, chain
-from threading import Thread
 from time import sleep
 
 import socket
@@ -23,9 +22,6 @@ CARD_TYPES = NUMBERS + SPECIAL_CARD_TYPES + BLACK_CARD_TYPES
 HOST = '127.0.0.1'  # localhost
 PORT = 12345        # Port for the server
 
-# List to keep track of connected clients
-clients = []
-
 WIDTH = 1200
 HEIGHT = 800
 
@@ -35,8 +31,15 @@ MAX_CLIENTS = int(input("Enter the maximum number of clients: "))
 # File to store client details
 CLIENTS_FILE = "clients_data.json"
 
-# Global variables
-game_data = None
+# List to keep track of connected clients
+clients = []
+client_data = {}
+game_data = {
+    'selected_card': None,
+    'selected_color': None,
+    'color_selection_required': False,
+    'log': '',
+}
 num_players = MAX_CLIENTS
 # deck_img = Actor('back')
 # color_imgs = {color: Actor(color) for color in COLORS}
@@ -458,6 +461,113 @@ class AIUnoGame:
             ' '.join(str(card) for card in self.player.hand)
         ))
 
+class User:
+    def __init__(self, username, user_id, user_socket):
+        self._user_data = {'username': username, 'user_id': user_id}
+        self._user_socket = user_socket
+        self._total_wins = 0
+        self._total_defeats = 0
+        self._total_played = 0
+
+    @property
+    def username(self):
+        return self._user_data['username']
+
+    @username.setter
+    def username(self, value):
+        self._user_data['username'] = value
+
+    @property
+    def user_id(self):
+        return self._user_data['user_id']
+
+    @user_id.setter
+    def user_id(self, value):
+        self._user_data['user_id'] = value
+
+    @property
+    def user_socket(self):
+        return self._user_socket
+
+    @user_socket.setter
+    def user_socket(self, value):
+        self._user_socket = [value]
+
+    @property
+    def total_wins(self):
+        return self._total_wins
+
+    @total_wins.setter
+    def total_wins(self, value):
+        self._total_wins = value
+
+    @property
+    def total_defeats(self):
+        return self._total_defeats
+
+    @total_defeats.setter
+    def total_defeats(self, value):
+        self._total_defeats = value
+
+    @property
+    def total_played(self):
+        return self._total_played
+
+    @total_played.setter
+    def total_played(self, value):
+        self._total_played = value
+
+    def to_dict(self):
+        """
+        Convert the User object into a dictionary for JSON serialization.
+        """
+        return {
+            'user_data': self.user_data,
+            'user_socket': self.user_socket,
+            'total_wins': self.total_wins,
+            'total_defeats': self.total_defeats,
+            'total_played': self.total_played
+        }
+
+    @staticmethod
+    def from_dict(data):
+        """
+        Create a User object from a dictionary.
+        """
+        user = User(
+            username=data['user_data']['username'],
+            user_id=data['user_data']['user_id'],
+            user_socket=data['user_socket'][0] if data['user_socket'] else None
+        )
+        user.total_wins = data['total_wins']
+        user.total_defeats = data['total_defeats']
+        user.total_played = data['total_played']
+        return user
+
+    def save_to_json(self, file_path):
+        """
+        Save the User object to a JSON file.
+        """
+        try:
+            with open(file_path, 'w') as file:
+                json.dump(self.to_dict(), file, indent=4)
+            print(f"User data saved to {file_path}")
+        except Exception as e:
+            print(f"Error saving user data: {e}")
+
+    @staticmethod
+    def load_from_json(file_path):
+        """
+        Load a User object from a JSON file.
+        """
+        try:
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+            return User.from_dict(data)
+        except Exception as e:
+            print(f"Error loading user data: {e}")
+            return None
+
 # game = AIUnoGame(MAX_CLIENTS)
 
 def draw_deck():
@@ -532,7 +642,8 @@ def save_client_data():
 def update_client_data(username, user_id, played, wins, defeats):
     """Update client data for a user and save it."""
     if username in client_data:
-        client_data[username]['total_played'] += 1
+        played += 1
+        client_data[username]['total_played'] = played
     else:
         client_data[username] = {
             'user_id': user_id,
@@ -542,102 +653,83 @@ def update_client_data(username, user_id, played, wins, defeats):
         }
     save_client_data()
 
-
-def broadcast(message, sender_socket=None):
-    """Broadcast a message to all clients except the sender."""
-    for client in clients:
-        if client != sender_socket:
-            try:
-                client.send(message)
-            except Exception as e:
-                print(f"Error sending message: {e}")
-                clients.remove(client)
-
-def handle_client(client_socket, username):
-    """
-    Handles communication with a single client.
-    """
+def handle_client(client_socket, username, game):
+    """Handles communication with a single client."""
+    print("at handle_client....")
     user_id = client_data[username]['user_id']
-    try:
-        while True:
-            message = client_socket.recv(1024)
+    player_index = len(game.players) - len(clients)
+    player = game.players[player_index]
 
-            if message:
-                print(f"Received from {user_id}: {message.decode('utf-8')}")
-                broadcast(message, client_socket)
-            else:
-                break
-    except:
-        pass
-    finally:
-        # Update client data on exit
-        # if user_id in client_data:
-        #     print("gorgali")
-        #     # update_client_data(user_id, user_id)
-        #     # client_data[user_id]['total_played'] += 1
-        print(f"Client {user_id} disconnected")
-        clients.remove(client_socket)
-        client_socket.close()
-        # save_client_data()
+    # try:
+    #     client_socket.send(f"Welcome {username}! You are Player {player_index}.\n".encode('utf-8'))
 
-def start_game():
-    """Start the Uno game when all clients are connected."""
-    # global game_data, num_players, game
+    #     while game.is_active:
+    #         current_player = game.current_player
 
-    print("Starting Uno Game...")
-    # os.system('pgzrun uno_pgz.py')
-    
-    # game = AIUnoGame(num_players)
+    #         if current_player == player:
+    #             print("gorgali server")
+    #             # Notify player to make a move
+    #             # game_state = {
+    #             #     'log': f"It's your turn, {username}!",
+    #             #     'current_card': {
+    #             #         'color': game.current_card.color,
+    #             #         'type': game.current_card.card_type
+    #             #     },
+    #             #     'hand': [{'color': c.color, 'type': c.card_type} for c in player.hand],
+    #             #     'color_selection_required': game.current_card.color == 'black' and not game.current_card.temp_color
+    #             # }
+    #             # client_socket.send(json.dumps(game_state).encode('utf-8'))
 
-    # deck_img = Actor('back')
-    # color_imgs = {color: Actor(color) for color in COLORS}
+    #             # Wait for player's move
+    #             # move = json.loads(client_socket.recv(2048).decode('utf-8'))
+    #             # selected_card = move.get('selected_card')
+    #             # selected_color = move.get('selected_color')
 
-    # def game_loop():
-    #     while game.game.is_active:
-    #         sleep(1)
-    #         next(game)
+    #             # try:
+    #             #     game.play(player_index, selected_card, selected_color)
+    #             # except ValueError as e:
+    #             #     client_socket.send(f"Invalid move: {str(e)}\n".encode('utf-8'))
 
-    # game_loop_thread = Thread(target=game_loop)
-    # game_loop_thread.start()
+    #         else:
+    #             sleep(1)  # Wait for the turn to change
+
+    #     # Notify winner
+    #     # winner = game.winner
+    #     # client_socket.send(f"Game over! Player {game.players.index(winner)} wins!".encode('utf-8'))
+
+    # except Exception as e:
+    #     print(f"Error with client {username}: {e}")
+    # finally:
+    #     client_socket.close()
 
 def start_server():
-    """Start the chat server."""
+    """Start the Uno server."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((HOST, PORT))
     server.listen(MAX_CLIENTS)
-    print(f"UNO Server is listening on {HOST}:{PORT}")
+    print(f"UNO Server listening on {HOST}:{PORT}")
 
-    while True:
+    # game = UnoGame(MAX_CLIENTS)
+
+    while len(clients) < MAX_CLIENTS:
         client_socket, client_address = server.accept()
 
-        if len(clients) >= MAX_CLIENTS:
-            print(f"Capacity reached. Rejecting connection from {client_address}")
-            client_socket.send(b"Server is at full capacity. Please try again later.")
-            client_socket.close()
+        print(f"New connection from {client_address}")
+        client_socket.send(b"Enter your username: ")
+        username = client_socket.recv(1024).decode('utf-8').strip()
+
+        if username in client_data:
+            user_id = client_data[username]['user_id']
         else:
-            print(f"New connection from {client_address}")
+            user_id = str(len(client_data) + 1)
+            update_client_data(username, user_id, 0, 0, 0)
 
-            # Ask for username
-            client_socket.send(b"Enter your username: ")
-            username = client_socket.recv(1024).decode('utf-8').strip()
+        clients.append(client_socket)
 
-            # Assign a unique ID
-            if username in client_data:
-                user_id = client_data[username]['user_id']
-            else:
-                user_id = str(len(client_data) + 1)
-                update_client_data(username, user_id, 1, 0, 0)
+        # Start thread for client
+        # threading.Thread(target=handle_client, args=(client_socket, username, game)).start()
 
-            client_socket.send(f"Welcome {username}! Your User ID is {user_id}.\n".encode('utf-8'))
-            clients.append(client_socket)
-            client_socket.send(f"Wait for other players to Start Game...\n".encode('utf-8'))
-            
-            # Start the game when all clients are connected
-            if len(clients) == MAX_CLIENTS:
-                print("All players connected. Starting the game...")
-                threading.Thread(target=start_game).start()
-
-            # threading.Thread(target=handle_client, args=(client_socket, user_id)).start()
+    print("All players connected. Starting the game...")
 
 if __name__ == "__main__":
     start_server()
